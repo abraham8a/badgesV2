@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Event QR Validator</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { 
+            margin: 0; 
+            background: #000; 
+            color: white; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            text-align: center; 
+            overflow: hidden; 
+            touch-action: manipulation;
+        }
+        
+        #setup {
+            display: flex;
+            height: 100vh;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #startBtn { 
+            padding: 30px 60px; 
+            font-size: 2rem; 
+            font-weight: bold;
+            cursor: pointer; 
+            border-radius: 15px; 
+            border: none; 
+            background: #28a745; 
+            color: white; 
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+
+        #mainUI { display: none; padding-top: 20px; }
+
+        #reader { 
+            width: 90%; 
+            max-width: 500px; 
+            margin: 0 auto; 
+            border-radius: 20px; 
+            border: 4px solid #333;
+            overflow: hidden;
+        }
+
+        #stats { 
+            margin-top: 25px; 
+            font-size: 1.2rem; 
+            letter-spacing: 1px;
+            color: #888; 
+        }
+
+        #count { 
+            font-size: 5rem; 
+            font-weight: 800;
+            color: #00ff00; 
+            display: block; 
+            margin-top: 10px;
+        }
+
+        /* Full Screen Result Overlay */
+        #overlay {
+            position: fixed; 
+            top: 0; left: 0; 
+            width: 100%; height: 100%;
+            display: none; 
+            justify-content: center; 
+            align-items: center;
+            z-index: 9999; 
+            font-size: 12vw; 
+            font-weight: 900; 
+            text-transform: uppercase;
+        }
+
+        .valid-bg { background-color: #008000; }
+
+        .flash-red { animation: rapid-blink 0.1s infinite; }
+        @keyframes rapid-blink { 
+            0% { background: #ff0000; } 
+            50% { background: #000000; } 
+            100% { background: #ff0000; } 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="setup">
+        <button id="startBtn">ACTIVATE SCANNER</button>
+    </div>
+
+    <div id="mainUI">
+        <div id="reader"></div>
+        <div id="stats">
+            VALID ADMISSIONS
+            <span id="count">0</span>
+        </div>
+    </div>
+
+    <div id="overlay"></div>
+
+    <script>
+        let validScans = 0;
+        let isProcessing = false;
+        let audioCtx;
+        const overlay = document.getElementById('overlay');
+        const countDisplay = document.getElementById('count');
+
+        // Initialize Scanner and Audio on Click
+        document.getElementById('startBtn').addEventListener('click', function() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('mainUI').style.display = 'block';
+            startScanner();
+        });
+
+        function playSound(freq, waveType) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = waveType || 'sine';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            // Taper off sound quickly
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+            osc.stop(audioCtx.currentTime + 0.5);
+        }
+
+        function onScanSuccess(decodedText) {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            // Date Handling
+            const today = new Date().toISOString().split('T')[0];
+            const dates = decodedText.trim().split('|');
+            
+            let isValid = false;
+
+            if (dates.length === 2) {
+                // Range logic: YYYY-MM-DD|YYYY-MM-DD
+                const start = dates[0];
+                const end = dates[1];
+                if (today >= start && today <= end) {
+                    isValid = true;
+                }
+            } else if (dates.length === 1) {
+                // Single day logic: YYYY-MM-DD
+                if (decodedText.trim() === today) {
+                    isValid = true;
+                }
+            }
+
+            triggerUI(isValid);
+        }
+
+        function triggerUI(isValid) {
+            overlay.style.display = 'flex';
+            
+            if (isValid) {
+                validScans++;
+                countDisplay.innerText = validScans;
+                overlay.className = 'valid-bg';
+                overlay.innerText = 'VALID';
+                playSound(1200, 'sine'); // High pitch beep
+            } else {
+                overlay.className = 'flash-red';
+                overlay.innerText = 'DENIED';
+                playSound(120, 'square'); // Low pitch buzz
+            }
+
+            // Lock scanner for 2.5 seconds to prevent double scans
+            setTimeout(() => {
+                overlay.style.display = 'none';
+                overlay.className = '';
+                isProcessing = false;
+            }, 2500);
+        }
+
+        function startScanner() {
+            const html5QrCode = new Html5Qrcode("reader");
+            const config = { 
+                fps: 15, 
+                qrbox: { width: 280, height: 280 },
+                aspectRatio: 1.0
+            };
+            
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                config, 
+                onScanSuccess
+            ).catch(err => {
+                alert("Camera Error: " + err);
+            });
+        }
+    </script>
+</body>
+</html>
