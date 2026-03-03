@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Gatekeeper</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { margin: 0; background: #111; color: white; font-family: 'Segoe UI', sans-serif; text-align: center; overflow: hidden; }
+        #reader { width: 100%; max-width: 500px; margin: 20px auto; border-radius: 20px; border: 2px solid #333; }
+        #stats { font-size: 1.5rem; margin-top: 10px; color: #aaa; }
+        #count { font-size: 3rem; color: #00ff00; display: block; }
+        
+        /* The Full Screen Flash Overlay */
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; justify-content: center; align-items: center;
+            z-index: 1000; font-size: 10vw; font-weight: 900; color: white;
+        }
+        
+        .flash-red { animation: rapid-blink 0.1s infinite; }
+        @keyframes rapid-blink { 
+            0% { background: red; } 
+            50% { background: #000; } 
+            100% { background: red; } 
+        }
+
+        button { padding: 25px 50px; font-size: 1.5rem; margin-top: 20%; cursor: pointer; border-radius: 10px; border: none; background: #28a745; color: white; }
+    </style>
+</head>
+<body>
+
+    <div id="setup">
+        <button id="startBtn">START SCANNER</button>
+    </div>
+
+    <div id="mainUI" style="display:none;">
+        <div id="reader"></div>
+        <div id="stats">
+            SUCCESSFUL SCANS TODAY
+            <span id="count">0</span>
+        </div>
+    </div>
+
+    <div id="overlay"></div>
+
+    <script>
+        let validScans = 0;
+        let isProcessing = false; // Prevents double-scanning the same code
+        let audioCtx;
+        const overlay = document.getElementById('overlay');
+        const countDisplay = document.getElementById('count');
+
+        document.getElementById('startBtn').addEventListener('click', function() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('mainUI').style.display = 'block';
+            startScanner();
+        });
+
+        function playSound(freq, type) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type || 'sine';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+            osc.stop(audioCtx.currentTime + 0.5);
+        }
+
+        function onScanSuccess(decodedText) {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            const today = new Date().toISOString().split('T')[0];
+            
+            if (decodedText.trim() === today) {
+                handleResult(true);
+            } else {
+                handleResult(false);
+            }
+        }
+
+        function handleResult(isValid) {
+            overlay.style.display = 'flex';
+            
+            if (isValid) {
+                validScans++;
+                countDisplay.innerText = validScans;
+                overlay.style.backgroundColor = 'green';
+                overlay.innerText = 'VALID';
+                playSound(1500); // High pitch beep
+            } else {
+                overlay.classList.add('flash-red');
+                overlay.innerText = 'INVALID';
+                playSound(150, 'square'); // Low tone "buzz"
+            }
+
+            // Lock the scanner for 2 seconds to show result
+            setTimeout(() => {
+                overlay.style.display = 'none';
+                overlay.classList.remove('flash-red');
+                isProcessing = false;
+            }, 2000);
+        }
+
+        function startScanner() {
+            const html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                { fps: 15, qrbox: {width: 250, height: 250} }, 
+                onScanSuccess
+            );
+        }
+    </script>
+</body>
+</html>
